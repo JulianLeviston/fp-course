@@ -172,10 +172,6 @@ void = (<$) ()
 --
 -- void fb = () <$ fb
 
--- JDL alternate:
--- void f _ = ()
--- void = const ()
-
 -----------------------
 -- SUPPORT LIBRARIES --
 -----------------------
