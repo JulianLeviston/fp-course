@@ -64,6 +64,11 @@ instance Functor List where
 --      let headMappedItem = f x
 --          tailMappedItems = f <$> xs
 --      in headMappedItem :. tailMappedItems
+--
+-- Alternative:
+-- (<$>) f = foldr ((:.) . f) Nil
+--
+-- or, the equivalent: (<$>) f xs = foldr (\y zs = f y :. zs) Nil xs
 
 -- | Maps a function on the Optional functor.
 --
