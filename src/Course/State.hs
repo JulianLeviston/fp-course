@@ -38,8 +38,10 @@ exec ::
   State s a
   -> s
   -> s
-exec state =
-  snd <$> (runState state)
+exec =
+  (<$>) snd . runState
+
+-- alternatively: exec state = snd <$> runState state
 
 -- | Run the `State` seeded with `s` and retrieve the resulting value.
 --
@@ -48,8 +50,8 @@ eval ::
   State s a
   -> s
   -> a
-eval state =
-  fst <$> (runState state)
+eval =
+  (<$>) fst . runState
 
 -- | A `State` where the state also distributes into the produced value.
 --
@@ -68,7 +70,9 @@ put ::
   s
   -> State s ()
 put s =
-  State (\_ -> ((), s))
+  State $ const ((), s)
+
+-- altnerative: put s = State (\_ -> ((), s))
 
 -- | Implement the `Functor` instance for `State s`.
 --
