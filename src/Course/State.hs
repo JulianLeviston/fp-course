@@ -278,3 +278,57 @@ mySum = foldLeft (+) 0
 
 square :: Integral a => a -> a
 square = join (*) -- this strikes me as being particularly opaque
+
+
+digits' :: Integer -> List Int
+digits' 0 = Nil
+digits' x = reverse $ P.fromIntegral (x `mod` 10) :. digits' (x `div` 10)
+
+digits'' :: Integer -> List Int
+digits'' = reverse . unfoldr go . P.fromIntegral
+  where
+    go x =
+      if x <= 0
+      then Empty
+      else
+        let currentDigit = x `mod` 10
+            remainder = x `div` 10
+        in  Full (currentDigit, remainder)
+
+
+digitsToNumber' :: List Int -> Integer
+digitsToNumber' ys = toInteger $ go (reverse ys) 1
+  where
+    go Nil _ = 0
+    go (x :. xs) mult = x * mult + go xs (mult * 10)
+
+digitsToNumber'' :: List Int -> Integer
+digitsToNumber'' = toInteger . foldRight go 0 . indexList . reverse
+  where
+    indexList = zipWith (,) (listh [0..])
+    go (indexAsPower, x) num = x * (10 P.^ indexAsPower) + num
+
+-- create a printing calculator, use State (List String) Integer
+type PrintCalcState = State (List P.String) Integer
+
+mkLoggingOperation :: P.String -> (Integer -> Integer -> Integer) -> Integer -> Integer -> PrintCalcState
+mkLoggingOperation operationName operation x =
+  \acc -> get >>= \log ->
+  let stringToLog = show acc P.++ " " P.++ operationName P.++ " " P.++ show x in
+  put (log ++ (stringToLog :. Nil)) >>= \_ ->
+  pure $ acc `operation` x
+
+add :: Integer -> Integer -> PrintCalcState
+add = mkLoggingOperation "+" (+)
+
+subtract :: Integer -> Integer -> PrintCalcState
+subtract = mkLoggingOperation "-" (-)
+
+multiply :: Integer -> Integer -> PrintCalcState
+multiply = mkLoggingOperation "x" (*)
+
+divide :: Integer -> Integer -> PrintCalcState
+divide = mkLoggingOperation "/" div
+
+printingCalculatorMachine :: State (List P.String) Integer
+printingCalculatorMachine = pure 2 >>= add 5 >>= add 3 >>= subtract 2 >>= multiply 23 >>= divide 2
