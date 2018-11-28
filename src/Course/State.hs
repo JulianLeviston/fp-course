@@ -39,7 +39,9 @@ exec ::
   -> s
   -> s
 exec =
-  error "todo: Course.State#exec"
+  (<$>) snd . runState
+
+-- alternatively: exec state = snd <$> runState state
 
 -- | Run the `State` seeded with `s` and retrieve the resulting value.
 --
@@ -49,7 +51,7 @@ eval ::
   -> s
   -> a
 eval =
-  error "todo: Course.State#eval"
+  (<$>) fst . runState
 
 -- | A `State` where the state also distributes into the produced value.
 --
@@ -58,7 +60,7 @@ eval =
 get ::
   State s s
 get =
-  error "todo: Course.State#get"
+  State (\x -> (x, x))
 
 -- | A `State` where the resulting state is seeded with the given value.
 --
@@ -67,8 +69,10 @@ get =
 put ::
   s
   -> State s ()
-put =
-  error "todo: Course.State#put"
+put s =
+  State $ const ((), s)
+
+-- altnerative: put s = State (\_ -> ((), s))
 
 -- | Implement the `Functor` instance for `State s`.
 --
@@ -79,8 +83,13 @@ instance Functor (State s) where
     (a -> b)
     -> State s a
     -> State s b
-  (<$>) =
-    error "todo: Course.State#(<$>)"
+  (<$>) f state =
+      State newStateF
+    where
+      newStateF s =
+        let (x, y) = runState state s
+        in (f x, y)
+
 
 -- | Implement the `Applicative` instance for `State s`.
 --
@@ -97,14 +106,20 @@ instance Applicative (State s) where
   pure ::
     a
     -> State s a
-  pure =
-    error "todo: Course.State pure#instance (State s)"
+  pure x =
+    State (\s -> (x, s))
   (<*>) ::
     State s (a -> b)
     -> State s a
-    -> State s b 
-  (<*>) =
-    error "todo: Course.State (<*>)#instance (State s)"
+    -> State s b
+  (<*>) stateF stateX =
+    State (\s ->
+      let
+        (f, s2) = runState stateF s
+        (x, s3) = runState stateX s2
+      in
+        (f x, s3)
+    )
 
 -- | Implement the `Bind` instance for `State s`.
 --
@@ -118,8 +133,13 @@ instance Monad (State s) where
     (a -> State s b)
     -> State s a
     -> State s b
-  (=<<) =
-    error "todo: Course.State (=<<)#instance (State s)"
+  (=<<) f state =
+    State (\s ->
+      let
+        (x, s2) = runState state s
+      in
+        runState (f x) s2
+    )
 
 -- | Find the first element in a `List` that satisfies a given predicate.
 -- It is possible that no element is found, hence an `Optional` result.
@@ -140,8 +160,22 @@ findM ::
   (a -> f Bool)
   -> List a
   -> f (Optional a)
-findM =
-  error "todo: Course.State#findM"
+findM _ Nil = pure Empty
+findM mp (x :. xs) =
+  mp x >>= \predicateResult ->
+  case predicateResult of
+    True -> pure (Full x)
+    False -> findM mp xs
+
+-- alternative, using foldRight, probably not very efficient:
+-- findM mp = foldRight foldStep (pure Empty)
+--   where
+--     foldStep x mOpt = mOpt >>= branchOnOption x
+--     branchOnOption x Empty = mp x >>= resultOnBool x
+--     branchOnOption _ (Full y) = pure (Full y)
+--     resultOnBool x True = pure (Full x)
+--     resultOnBool _ False = pure Empty
+
 
 -- | Find the first element in a `List` that repeats.
 -- It is possible that no element repeats, hence an `Optional` result.
@@ -154,8 +188,23 @@ firstRepeat ::
   Ord a =>
   List a
   -> Optional a
-firstRepeat =
-  error "todo: Course.State#firstRepeat"
+firstRepeat xs = eval (findM mp xs) S.empty
+  where
+    mp x =
+      get >>= \existingValues ->
+      let isMember = S.member x existingValues in
+      if isMember
+        then pure isMember
+        else put (S.insert x existingValues) >>= \_ -> pure isMember
+
+-- reads much bit nicer using `do` syntax, and the `when` function as a guard:
+--  where mp x = do
+--    existingValues <- get
+--    let isPresent = S.member x existingValues
+--        isMissing = not isPresent
+--    when isMissing $ put $ S.insert x existingValues
+--    pure isPresent
+
 
 -- | Remove all duplicate elements in a `List`.
 -- /Tip:/ Use `filtering` and `State` with a @Data.Set#Set@.
@@ -167,8 +216,22 @@ distinct ::
   Ord a =>
   List a
   -> List a
-distinct =
-  error "todo: Course.State#distinct"
+distinct xs = eval (filtering mp xs) S.empty
+  where
+    mp x =
+      get >>= \existingValues ->
+      let isMember = S.member x existingValues in
+      if isMember
+        then pure False
+        else put (S.insert x existingValues) >>= \_ -> pure True
+
+-- also would read much bit nicer using `do` syntax, and the `when` function as a guard:
+--  where mp x = do
+--    existingValues <- get
+--    let isMissing = not $ S.member x existingValues
+--    when isMissing $ put $ S.insert x existingValues
+--    pure isMissing -- ie filtering, so include in the output only if missing
+
 
 -- | A happy number is a positive integer, where the sum of the square of its digits eventually reaches 1 after repetition.
 -- In contrast, a sad number (not a happy number) is where the sum of the square of its digits never reaches 1
@@ -191,8 +254,81 @@ distinct =
 --
 -- >>> isHappy 44
 -- True
-isHappy ::
-  Integer
-  -> Bool
-isHappy =
-  error "todo: Course.State#isHappy"
+isHappy :: Integer -> Bool
+isHappy num
+  | num <= 0 = False
+  | otherwise =
+      let sumsOfSquares = produce sumOfSquaresOfDigits (fromInteger num)
+      in contains 1 $ firstRepeat sumsOfSquares
+
+sumOfSquaresOfDigits :: (Integral a, Show a) => a -> a
+sumOfSquaresOfDigits = sumSquares . digits
+
+digits :: (Integral a, Show a) => a -> List a
+digits = (<$>) digitToIntegral . listh . show
+
+digitToIntegral :: Integral a => Char -> a
+digitToIntegral = fromInteger . toInteger . digitToInt
+
+sumSquares :: Integral a => List a -> a
+sumSquares = mySum . map square
+
+mySum :: Integral a => List a -> a
+mySum = foldLeft (+) 0
+
+square :: Integral a => a -> a
+square = join (*) -- this strikes me as being particularly opaque
+
+
+digits' :: Integer -> List Int
+digits' 0 = Nil
+digits' x = reverse $ P.fromIntegral (x `mod` 10) :. digits' (x `div` 10)
+
+digits'' :: Integer -> List Int
+digits'' = reverse . unfoldr go . P.fromIntegral
+  where
+    go x =
+      if x <= 0
+      then Empty
+      else
+        let currentDigit = x `mod` 10
+            remainder = x `div` 10
+        in  Full (currentDigit, remainder)
+
+
+digitsToNumber' :: List Int -> Integer
+digitsToNumber' ys = toInteger $ go (reverse ys) 1
+  where
+    go Nil _ = 0
+    go (x :. xs) mult = x * mult + go xs (mult * 10)
+
+digitsToNumber'' :: List Int -> Integer
+digitsToNumber'' = toInteger . foldRight go 0 . indexList . reverse
+  where
+    indexList = zipWith (,) (listh [0..])
+    go (indexAsPower, x) num = x * (10 P.^ indexAsPower) + num
+
+-- create a printing calculator, use State (List String) Integer
+type PrintCalcState = State (List P.String) Integer
+
+mkLoggingOperation :: P.String -> (Integer -> Integer -> Integer) -> Integer -> Integer -> PrintCalcState
+mkLoggingOperation operationName operation x =
+  \acc -> get >>= \log ->
+  let stringToLog = show acc P.++ " " P.++ operationName P.++ " " P.++ show x in
+  put (log ++ (stringToLog :. Nil)) >>= \_ ->
+  pure $ acc `operation` x
+
+add :: Integer -> Integer -> PrintCalcState
+add = mkLoggingOperation "+" (+)
+
+subtract :: Integer -> Integer -> PrintCalcState
+subtract = mkLoggingOperation "-" (-)
+
+multiply :: Integer -> Integer -> PrintCalcState
+multiply = mkLoggingOperation "x" (*)
+
+divide :: Integer -> Integer -> PrintCalcState
+divide = mkLoggingOperation "/" div
+
+printingCalculatorMachine :: State (List P.String) Integer
+printingCalculatorMachine = pure 2 >>= add 5 >>= add 3 >>= subtract 2 >>= multiply 23 >>= divide 2
